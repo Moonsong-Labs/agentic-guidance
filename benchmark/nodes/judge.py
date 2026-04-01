@@ -8,15 +8,16 @@ to score both using the full rubric. The judge never sees variant names.
 from __future__ import annotations
 
 import asyncio
+import itertools
 import logging
 import random
 from dataclasses import dataclass
 from typing import Union
 
 from pydantic_ai import Agent
-
 from pydantic_graph import BaseNode, End, GraphRunContext
 
+from ..checkpointing import load_judge_scores, save_judge_scores
 from ..config import DIMENSION_LABELS
 from ..models import ABMapping, DimensionScore, JudgeScore
 from ..rubric import build_judge_system_prompt
@@ -53,6 +54,7 @@ class JudgeResponses(BaseNode["PipelineState", "PipelineDeps", None]):
         state = ctx.state
         config = state.config
         sem = asyncio.Semaphore(config.max_concurrent_judgments)
+        config_hash = config.config_hash()
 
         # Group responses by task_id and variant
         responses_by_task: dict[int, dict[str, str]] = {}
@@ -63,27 +65,45 @@ class JudgeResponses(BaseNode["PipelineState", "PipelineDeps", None]):
             if r.variant_name not in responses_by_task[r.task_id]:
                 responses_by_task[r.task_id][r.variant_name] = r.response_text
 
+        if config.enable_checkpointing and not state.judge_scores:
+            state.judge_scores = load_judge_scores(
+                config.output_dir,
+                config.checkpoint_dir,
+                config_hash,
+            )
+            if state.judge_scores:
+                logger.info("Loaded %d checkpointed judge scores", len(state.judge_scores))
+
         # Create AB mappings with deterministic seed
         rng = random.Random(config.seed)
-        variant_names = [v.name for v in config.variants]
+        state.ab_mappings = []
 
         for task in state.tasks:
-            if task.id not in responses_by_task:
+            available_variants = sorted(responses_by_task.get(task.id, {}).keys())
+            if len(available_variants) < 2:
                 continue
-            # Randomly assign A/B
-            shuffled = list(variant_names)
-            rng.shuffle(shuffled)
-            state.ab_mappings.append(
-                ABMapping(
-                    task_id=task.id,
-                    a_variant=shuffled[0],
-                    b_variant=shuffled[1],
+            for left_variant, right_variant in itertools.combinations(available_variants, 2):
+                shuffled = [left_variant, right_variant]
+                rng.shuffle(shuffled)
+                pair_id = f"{task.id}:{min(left_variant, right_variant)}:{max(left_variant, right_variant)}"
+                state.ab_mappings.append(
+                    ABMapping(
+                        task_id=task.id,
+                        pair_id=pair_id,
+                        a_variant=shuffled[0],
+                        b_variant=shuffled[1],
+                    )
                 )
-            )
+
+        completed_pair_ids = {score.pair_id for score in state.judge_scores if score.pair_id}
+        pending_mappings = [
+            mapping for mapping in state.ab_mappings if mapping.pair_id not in completed_pair_ids
+        ]
 
         logger.info(
-            "Judging %d tasks with blind AB randomization (seed=%d)",
+            "Judging %d variant pairs (%d pending) with blind AB randomization (seed=%d)",
             len(state.ab_mappings),
+            len(pending_mappings),
             config.seed,
         )
 
@@ -116,26 +136,39 @@ class JudgeResponses(BaseNode["PipelineState", "PipelineDeps", None]):
 
                     if state.total_judge_calls % 10 == 0:
                         logger.info(
-                            "  Progress: %d/%d tasks judged",
+                            "  Progress: %d/%d variant pairs judged",
                             state.total_judge_calls,
                             len(state.ab_mappings),
                         )
 
-                    return result.output
+                    return result.output.model_copy(
+                        update={
+                            "task_id": mapping.task_id,
+                            "pair_id": mapping.pair_id,
+                        }
+                    )
                 except Exception as e:
                     logger.error("Judge failed for task %d: %s", task.id, e)
                     return None
 
         # Execute judging
-        coros = [judge_one(m) for m in state.ab_mappings]
-        results = await asyncio.gather(*coros)
-
-        for score in results:
-            if score is not None:
-                state.judge_scores.append(score)
+        coros = [judge_one(mapping) for mapping in pending_mappings]
+        for coro in asyncio.as_completed(coros):
+            score = await coro
+            if score is None:
+                continue
+            state.judge_scores.append(score)
+            completed_pair_ids.add(score.pair_id)
+            if config.enable_checkpointing:
+                save_judge_scores(
+                    config.output_dir,
+                    config.checkpoint_dir,
+                    config_hash,
+                    state.judge_scores,
+                )
 
         logger.info(
-            "Judged %d/%d tasks successfully",
+            "Judged %d/%d variant pairs successfully",
             len(state.judge_scores),
             len(state.ab_mappings),
         )

@@ -13,9 +13,9 @@ from dataclasses import dataclass
 from typing import Union
 
 from pydantic_ai import Agent
-
 from pydantic_graph import BaseNode, End, GraphRunContext
 
+from ..checkpointing import load_responses, save_responses
 from ..models import VariantResponse
 
 logger = logging.getLogger(__name__)
@@ -40,14 +40,30 @@ class RunVariants(BaseNode["PipelineState", "PipelineDeps", None]):
         deps = ctx.deps
         config = state.config
         sem = asyncio.Semaphore(config.max_concurrent_responses)
+        config_hash = config.config_hash()
+
+        if config.enable_checkpointing and not state.responses:
+            state.responses = load_responses(
+                config.output_dir,
+                config.checkpoint_dir,
+                config_hash,
+            )
+            if state.responses:
+                logger.info("Loaded %d checkpointed responses", len(state.responses))
 
         total_calls = len(state.tasks) * len(config.variants) * config.runs_per_variant
+        existing_keys = {
+            (response.task_id, response.variant_name, response.run_index)
+            for response in state.responses
+        }
+        pending_calls = total_calls - len(existing_keys)
         logger.info(
-            "Generating %d responses (%d tasks × %d variants × %d runs)",
+            "Generating %d responses (%d tasks × %d variants × %d runs, %d pending)",
             total_calls,
             len(state.tasks),
             len(config.variants),
             config.runs_per_variant,
+            pending_calls,
         )
 
         async def generate_one(
@@ -92,6 +108,9 @@ class RunVariants(BaseNode["PipelineState", "PipelineDeps", None]):
         for task in state.tasks:
             for variant in config.variants:
                 for run_idx in range(config.runs_per_variant):
+                    response_key = (task.id, variant.name, run_idx)
+                    if response_key in existing_keys:
+                        continue
                     coros.append(
                         generate_one(
                             task.id,
@@ -102,19 +121,29 @@ class RunVariants(BaseNode["PipelineState", "PipelineDeps", None]):
                         )
                     )
 
-        # Execute all
-        results = await asyncio.gather(*coros, return_exceptions=True)
+        failures = 0
+        for coro in asyncio.as_completed(coros):
+            try:
+                response = await coro
+            except Exception as exc:
+                failures += 1
+                logger.error("Response generation failed: %s", exc)
+                continue
 
-        for r in results:
-            if isinstance(r, Exception):
-                logger.error("Response generation failed: %s", r)
-            else:
-                state.responses.append(r)
+            state.responses.append(response)
+            existing_keys.add((response.task_id, response.variant_name, response.run_index))
+            if config.enable_checkpointing:
+                save_responses(
+                    config.output_dir,
+                    config.checkpoint_dir,
+                    config_hash,
+                    state.responses,
+                )
 
         logger.info(
             "Generated %d responses (%d failures)",
             len(state.responses),
-            sum(1 for r in results if isinstance(r, Exception)),
+            failures,
         )
 
         return JudgeResponses()

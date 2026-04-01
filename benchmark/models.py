@@ -63,6 +63,7 @@ class ABMapping(BaseModel):
     """Maps blinded labels (A/B) to actual variant names for one task."""
 
     task_id: int
+    pair_id: str = Field(description="Stable identifier for this task/variant pair")
     a_variant: str = Field(description="Variant name assigned to label A")
     b_variant: str = Field(description="Variant name assigned to label B")
 
@@ -76,7 +77,7 @@ class DimensionScore(BaseModel):
     """Score for a single dimension on a single response."""
 
     dimension: str
-    score: int = Field(ge=0, le=MAX_SCORE_PER_DIMENSION)
+    score: float = Field(ge=0, le=MAX_SCORE_PER_DIMENSION)
     reasoning: str = Field(description="Brief justification for this score")
 
 
@@ -84,12 +85,22 @@ class JudgeScore(BaseModel):
     """Complete judge output for one task's AB pair."""
 
     task_id: int
+    pair_id: str = Field(default="", description="Stable identifier for this judged pair")
     scores_a: list[DimensionScore] = Field(description="Scores for response A")
     scores_b: list[DimensionScore] = Field(description="Scores for response B")
-    total_a: int = Field(description="Sum of all dimension scores for A")
-    total_b: int = Field(description="Sum of all dimension scores for B")
+    total_a: float = Field(description="Sum of all dimension scores for A")
+    total_b: float = Field(description="Sum of all dimension scores for B")
     winner: Literal["A", "B", "Tie"]
     overall_reasoning: str = Field(description="1-3 sentence summary of key differences")
+
+
+class SingleJudgeScore(BaseModel):
+    """Judge output for rating a single response (no comparison)."""
+
+    task_id: int
+    scores: list[DimensionScore] = Field(description="Scores for the response")
+    total: float = Field(description="Sum of all dimension scores")
+    overall_reasoning: str = Field(description="1-3 sentence quality summary")
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +118,7 @@ class DecodedTaskResult(BaseModel):
     scores: dict[str, list[DimensionScore]] = Field(
         description="variant_name → list of DimensionScore"
     )
-    totals: dict[str, int] = Field(description="variant_name → total score")
+    totals: dict[str, float] = Field(description="variant_name → total score")
     winner: str = Field(description="Winning variant name or 'Tie'")
     reasoning: str
 

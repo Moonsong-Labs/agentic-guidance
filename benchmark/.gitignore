@@ -40,3 +40,10 @@ dist/
 *.log
 *.sqlite
 *.sqlite3
+
+# Benchmark run artifacts (local)
+results/
+results-*/
+.bench-checkpoints/
+.mplconfig/
+.history/

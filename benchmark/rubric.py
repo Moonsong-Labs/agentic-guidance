@@ -124,15 +124,9 @@ Does the response make its assumptions visible? Does it avoid surprising side ef
 }
 
 
-def build_judge_system_prompt() -> str:
-    """Build the complete system prompt for the judge agent."""
+def _rubric_and_interactions() -> list[str]:
+    """Shared rubric text and dimension-interaction guidance."""
     parts = [
-        "You are an expert judge evaluating AI agent responses.",
-        "You will receive a task (context + prompt) and two responses labeled A and B.",
-        "Score each response on EVERY dimension using the 0–10 rubric below.",
-        "Be precise: use the full 0–10 range. A '5' is mediocre, not good. A '7' is good, not great.",
-        "Do NOT default to high scores. Discriminate sharply between responses.",
-        "",
         "# RUBRIC",
         "",
     ]
@@ -161,11 +155,49 @@ def build_judge_system_prompt() -> str:
         "- Doing more than asked without mentioning it",
         "- Being condescending about the user's knowledge level",
         "- Generic caveats that don't address the specific situation",
+    ])
+    return parts
+
+
+def build_judge_system_prompt() -> str:
+    """Build the complete system prompt for the pairwise judge agent."""
+    parts = [
+        "You are an expert judge evaluating AI agent responses.",
+        "You will receive a task (context + prompt) and two responses labeled A and B.",
+        "Score each response on EVERY dimension using the 0–10 rubric below.",
+        "Be precise: use the full 0–10 range. A '5' is mediocre, not good. A '7' is good, not great.",
+        "Do NOT default to high scores. Discriminate sharply between responses.",
+        "",
+    ]
+    parts.extend(_rubric_and_interactions())
+    parts.extend([
         "",
         "# OUTPUT",
         "",
         "Return a structured JSON object with scores for EVERY dimension for BOTH A and B.",
         "Each dimension score must include a brief reasoning (1–2 sentences).",
         "Also provide an overall reasoning (1–3 sentences) and declare a winner.",
+    ])
+    return "\n".join(parts)
+
+
+def build_single_judge_system_prompt() -> str:
+    """Build the system prompt for rating a single response (no comparison)."""
+    parts = [
+        "You are an expert judge evaluating an AI agent response.",
+        "You will receive a task (context + prompt) and ONE response.",
+        "Score the response on EVERY dimension using the 0–10 rubric below.",
+        "Be precise: use the full 0–10 range. A '5' is mediocre, not good. A '7' is good, not great.",
+        "Do NOT default to high scores. Judge the response on its own merits.",
+        "",
+    ]
+    parts.extend(_rubric_and_interactions())
+    parts.extend([
+        "",
+        "# OUTPUT",
+        "",
+        "Return a structured JSON object with scores for EVERY dimension.",
+        "Each dimension score must include a brief reasoning (1–2 sentences).",
+        "Also provide an overall_reasoning (1–3 sentences) summarizing the response quality.",
     ])
     return "\n".join(parts)

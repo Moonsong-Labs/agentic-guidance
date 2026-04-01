@@ -96,6 +96,7 @@ class BenchConfig(BaseModel):
         default_factory=lambda: [
             PromptVariant(name="rules", path="prompts/msl-agent.md"),
             PromptVariant(name="values", path="prompts/msl-agent-values.md"),
+            PromptVariant(name="no_guidelines", path="prompts/no-guidelines.md"),
         ]
     )
 
@@ -114,6 +115,14 @@ class BenchConfig(BaseModel):
 
     # Output
     output_dir: str = Field(default="results", description="Directory for all output files")
+    checkpoint_dir: str = Field(
+        default=".bench-checkpoints",
+        description="Directory for resumable response/judgment checkpoints",
+    )
+    enable_checkpointing: bool = Field(
+        default=True,
+        description="Persist and reuse expensive response/judgment state",
+    )
 
     # Judging
     judge_temperature: float = Field(default=0.0, description="Temperature for judge model")
