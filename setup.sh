@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Moonsong Labs — Zero-to-One AI Engineering Setup
 #
+# Configures your AI coding tools with:
+#   1. Engineering values — core principles injected into every AI session
+#   2. Skills — engineering workflows (TDD, debugging, brainstorming, etc.)
+#   3. Prompt-Train (optional) — shared API account with usage monitoring
+#
 # Usage:
-#   bash <(curl -sSL https://raw.githubusercontent.com/Moonsong-Labs/agentic-guidance/main/setup.sh)
-#   bash <(curl -sSL https://raw.githubusercontent.com/Moonsong-Labs/agentic-guidance/main/setup.sh) --install-claude
+#   bash <(curl -sSL https://github.com/Moonsong-Labs/agentic-guidance/releases/latest/download/setup.sh)
+#   bash <(curl -sSL https://github.com/Moonsong-Labs/agentic-guidance/releases/latest/download/setup.sh) --install-claude
 #
 # Or locally:
 #   ./setup.sh [--install-claude] [--help]
@@ -30,8 +35,13 @@ for arg in "$@"; do
             cat <<'HELP'
 Moonsong Labs — Zero-to-One AI Engineering Setup
 
+Configures your AI coding tools with:
+  1. Engineering values — core principles injected into every AI session
+  2. Skills — engineering workflows (TDD, debugging, brainstorming, etc.)
+  3. Prompt-Train (optional) — shared API account with usage monitoring
+
 Usage:
-  bash <(curl -sSL https://raw.githubusercontent.com/Moonsong-Labs/agentic-guidance/main/setup.sh)
+  bash <(curl -sSL https://github.com/Moonsong-Labs/agentic-guidance/releases/latest/download/setup.sh)
   ./setup.sh [--install-claude] [--help]
 
 Flags:
@@ -51,13 +61,11 @@ done
 # Constants
 # --------------------------------------------------------------------------
 
-# TODO: switch to Moonsong-Labs/knowledge-work-plugins once PR is merged
-REPO_URL="https://github.com/gabriel-hurtado/knowledge-work-plugins.git"
-REPO_BRANCH="feat/msl-engineering-values"
+REPO_URL="https://github.com/Moonsong-Labs/knowledge-work-plugins.git"
+REPO_BRANCH="main"
 TRAIN_URL="https://train.msldev.io"
 TRAIN_DASHBOARD="https://train.msldev.io/dashboard/projects"
-# TODO: switch to Moonsong-Labs once PR is merged
-VALUES_PROMPT_URL="https://raw.githubusercontent.com/gabriel-hurtado/knowledge-work-plugins/feat/msl-engineering-values/core-engineering/shared/msl-engineering-values.md"
+VALUES_PROMPT_URL="https://raw.githubusercontent.com/Moonsong-Labs/knowledge-work-plugins/main/core-engineering/shared/msl-engineering-values.md"
 PT_TOKEN=""
 
 DID_PROMPTTRAIN=false
@@ -87,101 +95,52 @@ for cmd in git curl python3; do
 done
 
 # --------------------------------------------------------------------------
-# Install gum
-# --------------------------------------------------------------------------
-
-install_gum() {
-    command -v gum &>/dev/null && return 0
-
-    mkdir -p "$HOME/.local/bin"
-    local arch
-    arch=$(uname -m)
-    [[ "$arch" == "aarch64" ]] && arch="arm64"
-
-    local os_name
-    [[ "$OS" == "macos" ]] && os_name="Darwin" || os_name="Linux"
-
-    if [[ "$OS" == "macos" ]] && command -v brew &>/dev/null; then
-        brew install gum >/dev/null 2>&1 && return 0
-    fi
-
-    local url
-    url=$(curl -fsSL https://api.github.com/repos/charmbracelet/gum/releases/latest \
-        | grep "browser_download_url.*${os_name}_${arch}.tar.gz" \
-        | head -1 | cut -d '"' -f 4) || return 1
-    curl -fsSL "$url" | tar xz -C "$HOME/.local/bin" gum 2>/dev/null || return 1
-    export PATH="$HOME/.local/bin:$PATH"
-    command -v gum &>/dev/null
-}
-
-HAS_GUM=false
-if command -v gum &>/dev/null; then
-    HAS_GUM=true
-else
-    printf "\033[0;36m▸\033[0m Installing gum (pretty terminal UI)...\n"
-    if install_gum 2>/dev/null; then
-        HAS_GUM=true
-        printf "\033[0;32m✓\033[0m gum installed\n"
-    else
-        printf "\033[0;33m!\033[0m gum not available — using plain output\n"
-    fi
-fi
-
-# --------------------------------------------------------------------------
 # UI
 # --------------------------------------------------------------------------
 
+COLS=$(tput cols 2>/dev/null || echo 80)
+BOLD='\033[1m'
+DIM='\033[2m'
+RESET='\033[0m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+BLUE='\033[0;34m'
+
 ui_header() {
-    if $HAS_GUM; then
-        echo ""
-        gum style --bold --border rounded --padding "0 2" --border-foreground 27 "$1"
-    else
-        printf "\n\033[1m── %s ──\033[0m\n" "$1"
-    fi
+    local rule; rule=$(printf '─%.0s' $(seq 1 "$COLS"))
+    printf "\n%b%s%b\n" "$CYAN" "$rule" "$RESET"
+    printf "%b  %s%b\n" "$BOLD" "$1" "$RESET"
+    printf "%b%s%b\n\n" "$CYAN" "$rule" "$RESET"
 }
-
-ui_section() {
-    if $HAS_GUM; then
-        echo ""
-        gum style --bold --foreground 27 "▸ $1"
-    else
-        printf "\n\033[1m▸ %s\033[0m\n" "$1"
-    fi
+ui_section() { printf "\n%b▸ %s%b\n" "${BOLD}${CYAN}" "$1" "$RESET"; }
+ui_ok()      { printf "  %b✓%b %s\n" "$GREEN" "$RESET" "$1"; }
+ui_warn()    { printf "  %b!%b %s\n" "$YELLOW" "$RESET" "$1"; }
+ui_fail()    { printf "  %b✗%b %s\n" "$RED" "$RESET" "$1"; }
+ui_info() {
+    printf '%s' "$1" | fold -s -w $((COLS - 4)) | while IFS= read -r line || [[ -n "$line" ]]; do
+        printf "  %b%s%b\n" "$DIM" "$line" "$RESET"
+    done
 }
-
-ui_ok()   { $HAS_GUM && gum style --foreground 245 "  ✓ $1" || printf "  \033[0;37m✓\033[0m %s\n" "$1"; }
-ui_warn() { $HAS_GUM && gum style --foreground 220 "  ! $1" || printf "  \033[0;33m!\033[0m %s\n" "$1"; }
-ui_fail() { $HAS_GUM && gum style --foreground 197 "  ✗ $1" || printf "  \033[0;31m✗\033[0m %s\n" "$1"; }
-ui_info() { $HAS_GUM && gum style --foreground 39  "  $1"   || printf "  \033[0;36m\033[0m%s\n" "$1"; }
+ui_link() {
+    printf '  \033]8;;%s\007%b\033[4m%s%b\033]8;;\007\n' "$1" "$BLUE" "${2:-$1}" "$RESET"
+}
 
 ui_confirm() {
-    if $HAS_GUM; then
-        gum confirm --selected.foreground 255 --selected.background 27 --unselected.foreground 245 "$1"
-    else
-        printf "\033[0;36m▸\033[0m %s [Y/n] " "$1"
-        local answer; read -r answer; answer="${answer:-Y}"
-        [[ "$answer" =~ ^[Yy] ]]
-    fi
+    printf "%b▸%b %s %b[Y/n]%b " "$CYAN" "$RESET" "$1" "$DIM" "$RESET"
+    local answer; read -r answer; answer="${answer:-Y}"
+    [[ "$answer" =~ ^[Yy] ]]
 }
 
 ui_input() {
-    local prompt="$1" placeholder="${2:-}"
-    if $HAS_GUM; then
-        gum input --header "▸ $prompt" --placeholder "$placeholder" --width 60 \
-            --prompt.foreground 39 --cursor.foreground 27 --header.foreground 39
-    else
-        printf "\033[0;36m▸\033[0m %s " "$prompt"
-        local val; read -r val; echo "$val"
-    fi
+    printf "%b▸%b %s " "$CYAN" "$RESET" "$1"
+    local val; read -r val; echo "$val"
 }
 
 ui_spin() {
     local title="$1"; shift
-    if $HAS_GUM; then
-        gum spin --title "$title" --spinner.foreground 27 -- "$@"
-    else
-        ui_info "$title"; "$@"
-    fi
+    ui_info "$title"; "$@"
 }
 
 # --------------------------------------------------------------------------
@@ -202,8 +161,19 @@ write_alias() {
         awk -v marker="$marker" -v alias_cmd="$alias_line" \
             '$0 == marker { print marker; print alias_cmd; getline; next } { print }' \
             "$SHELL_RC" > "$tmp"
+        # Validate: output must be at least as long as input (minus 1 line for the replaced alias)
+        local orig_lines new_lines
+        orig_lines=$(wc -l < "$SHELL_RC")
+        new_lines=$(wc -l < "$tmp")
+        if [[ "$new_lines" -lt $((orig_lines - 1)) ]]; then
+            ui_warn "Shell RC update looks wrong — keeping original"
+            rm -f "$tmp"
+            return 1
+        fi
+        cp "$SHELL_RC" "${SHELL_RC}.bak"
         mv "$tmp" "$SHELL_RC"
     else
+        cp "$SHELL_RC" "${SHELL_RC}.bak" 2>/dev/null || true
         printf '\n%s\n%s\n' "$marker" "$alias_line" >> "$SHELL_RC"
     fi
 }
@@ -214,10 +184,16 @@ clone_or_update() {
         local current_remote
         current_remote=$(git -C "$target" remote get-url origin 2>/dev/null)
         if [[ "$current_remote" != "$REPO_URL" ]]; then
-            ui_warn "Remote changed, re-cloning..."
-            rm -rf "$target"
+            ui_warn "Remote changed — moving old clone to ${target}.bak"
+            rm -rf "${target}.bak"
+            mv "$target" "${target}.bak"
             ui_spin "Cloning knowledge-work-plugins..." git clone --depth 1 --branch "$REPO_BRANCH" --quiet "$REPO_URL" "$target"
         else
+            # Check for local modifications before resetting
+            if [ -n "$(git -C "$target" status --porcelain 2>/dev/null)" ]; then
+                ui_warn "Local modifications detected in $target — stashing"
+                git -C "$target" stash --quiet 2>/dev/null || true
+            fi
             ui_spin "Updating knowledge-work-plugins..." git -C "$target" fetch --depth 1 origin "$REPO_BRANCH" --quiet
             git -C "$target" reset --hard FETCH_HEAD --quiet
         fi
@@ -232,12 +208,25 @@ ensure_toml_feature() {
     mkdir -p "$(dirname "$file")"
     if [ ! -f "$file" ]; then
         printf '[features]\n%s = %s\n' "$key" "$val" > "$file"
-    elif grep -q "${key} *= *" "$file" 2>/dev/null; then
+    elif grep -q "^${key} *= *" "$file" 2>/dev/null; then
+        # Match only at start of line to avoid hitting comments or values
         local tmp; tmp=$(mktemp)
-        sed "s/${key} *=.*/${key} = ${val}/" "$file" > "$tmp"; mv "$tmp" "$file"
-    elif grep -q "\[features\]" "$file" 2>/dev/null; then
+        sed "s/^${key} *=.*/${key} = ${val}/" "$file" > "$tmp"
+        if [ -s "$tmp" ]; then
+            mv "$tmp" "$file"
+        else
+            ui_warn "TOML update produced empty file — keeping original"
+            rm -f "$tmp"
+        fi
+    elif grep -q "^\[features\]" "$file" 2>/dev/null; then
         local tmp; tmp=$(mktemp)
-        awk -v feat="$key = $val" '/\[features\]/{print; print feat; next} {print}' "$file" > "$tmp"; mv "$tmp" "$file"
+        awk -v feat="$key = $val" '/^\[features\]/{print; print feat; next} {print}' "$file" > "$tmp"
+        if [ -s "$tmp" ]; then
+            mv "$tmp" "$file"
+        else
+            ui_warn "TOML update produced empty file — keeping original"
+            rm -f "$tmp"
+        fi
     else
         printf '\n[features]\n%s = %s\n' "$key" "$val" >> "$file"
     fi
@@ -257,8 +246,7 @@ elif command -v cursor &>/dev/null; then
 fi
 
 ui_header "Moonsong Labs — AI Engineering Setup"
-ui_info "This script configures your AI coding tools with MSL's"
-ui_info "engineering values, skills, and Prompt-Train proxy."
+ui_info "This script sets up engineering values (behavioral principles injected into every AI session), skills (TDD, debugging, brainstorming, code review, etc. as slash commands), and optionally Prompt-Train (shared API account with usage monitoring)."
 echo ""
 
 # --------------------------------------------------------------------------
@@ -314,17 +302,12 @@ configure_prompttrain() {
     fi
 
     if [[ -z "$PT_TOKEN" ]]; then
-        ui_info "Routes Claude Code through MSL's proxy for monitoring"
-        ui_info "and shared account pooling."
-        echo ""
-        ui_info "To get a key, either:"
-        ui_info "  • Ask your project lead for one, or"
-        ui_info "  • Create your own (open a project → API Keys → Generate)"
+        ui_info "Prompt-Train routes Claude through MSL's shared API account so you don't need your own Anthropic key — usage is tracked per-developer for cost management. This is optional; skipping still gives you values and skills."
+        ui_info "To get a key, ask your project lead or create your own at the dashboard (open a project, then API Keys, then Generate)."
         echo ""
         if ui_confirm "Open Prompt-Train dashboard in browser?"; then
             open "$TRAIN_DASHBOARD" 2>/dev/null || xdg-open "$TRAIN_DASHBOARD" 2>/dev/null || echo "    $TRAIN_DASHBOARD"
         fi
-        echo ""
         if ui_confirm "Do you have a Prompt-Train API key?"; then
             PT_TOKEN=$(ui_input "Paste your API key:" "cnp_live_...")
         fi
@@ -350,32 +333,53 @@ setup_claude_code() {
 
     local status
     status=$(python3 -c "
-import json
+import json, shutil, sys, os
 
 path = '$settings_file'
+
+# Load existing settings
 try:
     with open(path) as f:
         settings = json.load(f)
-except (FileNotFoundError, json.JSONDecodeError):
+except FileNotFoundError:
     settings = {}
+except json.JSONDecodeError:
+    print('malformed')
+    sys.exit(0)
 
-# TODO: switch to Moonsong-Labs/knowledge-work-plugins, remove ref
+# Back up before writing
+if os.path.exists(path):
+    shutil.copy2(path, path + '.bak')
+
 markets = settings.setdefault('extraKnownMarketplaces', {})
 markets['moonsong-labs'] = {
     'source': {
         'source': 'github',
-        'repo': 'gabriel-hurtado/knowledge-work-plugins',
-        'ref': 'feat/msl-engineering-values',
+        'repo': 'Moonsong-Labs/knowledge-work-plugins',
     }
 }
 
 plugins = settings.setdefault('enabledPlugins', {})
 plugins.setdefault('core-engineering@moonsong-labs', True)
 
-with open(path, 'w') as f:
+# Write to temp file, then rename (atomic on same filesystem)
+tmp_path = path + '.tmp'
+with open(tmp_path, 'w') as f:
     json.dump(settings, f, indent=2)
+
+# Validate what we wrote before replacing
+with open(tmp_path) as f:
+    json.load(f)
+
+os.replace(tmp_path, path)
 print('ok')
 ") || { ui_fail "Could not update settings.json"; return 1; }
+
+    if [[ "$status" == "malformed" ]]; then
+        ui_fail "$HOME/.claude/settings.json is malformed JSON — skipping to avoid data loss"
+        ui_info "Fix the file manually, then re-run this script."
+        return 1
+    fi
 
     if [[ "$status" == "ok" ]]; then
         ui_ok "Marketplace registered (moonsong-labs)"
@@ -412,11 +416,12 @@ setup_cursor() {
     # as of v2.6.x (known bug: forum.cursor.com/t/claude-hooks-dont-work/153614).
     # Workaround: inject values via global rules (~/.cursor/rules/).
     # TODO: switch to plugin hook once Cursor fixes sessionStart execution.
-    ui_warn "Cursor sessionStart hooks are buggy — using global rules as workaround"
+    ui_info "Installing values as Cursor global rules (loaded every session)"
     local rules_dir="$HOME/.cursor/rules"
     mkdir -p "$rules_dir"
     if curl -fsSL "$VALUES_PROMPT_URL" -o "$rules_dir/msl-engineering-values.mdc" 2>/dev/null; then
-        ui_ok "Values injected into ~/.cursor/rules/"
+        ui_ok "Values installed in ~/.cursor/rules/"
+        ui_info "Skills are available through the Claude Code plugin. Cursor hook support is limited, so values are delivered via global rules for now."
     else
         ui_warn "Could not download values prompt"
     fi
@@ -477,6 +482,7 @@ JSONEOF
     # Enable hooks feature flag
     ensure_toml_feature "$HOME/.codex/config.toml" "codex_hooks" "true"
     ui_ok "Hooks enabled"
+    ui_info "Engineering values and skills are now available in Codex. To update, re-run this script (Codex doesn't auto-update like Claude Code)."
 
     DID_CODEX=true
 }
@@ -499,24 +505,16 @@ done
 # Summary
 # --------------------------------------------------------------------------
 
-summary_lines=()
-$DID_PROMPTTRAIN && summary_lines+=("✓ Prompt-Train configured") || true
-$DID_CLAUDE_CODE && summary_lines+=("✓ Claude Code: marketplace + plugin$([ -n "$PT_TOKEN" ] && echo " + 'cld' alias")") || true
-$DID_CURSOR      && summary_lines+=("✓ Cursor: skills from plugin + values in global rules (hook workaround)") || true
-$DID_CODEX       && summary_lines+=("✓ Codex: skills + session-start hook from plugin") || true
-summary_lines+=("")
-if [[ -n "$PT_TOKEN" ]]; then
-    summary_lines+=("Restart your shell to load the 'cld' alias.")
-fi
-summary_lines+=("Start a new session to activate.")
-summary_lines+=("Re-run this script to pull latest values and skills.")
-
 echo ""
-if $HAS_GUM; then
-    printf '%s\n' "${summary_lines[@]}" | gum style --border rounded --padding "1 2" --border-foreground 27
-else
-    ui_header "Setup complete"
-    for line in "${summary_lines[@]}"; do
-        [[ -n "$line" ]] && echo "  $line" || echo ""
-    done
-fi
+ui_header "Setup complete"
+if $DID_PROMPTTRAIN; then ui_ok "Prompt-Train configured"; fi
+if $DID_CLAUDE_CODE; then ui_ok "Claude Code: marketplace + plugin enabled, auto-updates on session start"; fi
+if $DID_CURSOR; then ui_ok "Cursor: values in global rules, skills via Claude Code plugin"; fi
+if $DID_CODEX; then ui_ok "Codex: values + skills via session-start hook (re-run to update)"; fi
+echo ""
+ui_info "Engineering values and skills (/brainstorming, /tdd, /systematic-debugging, /writing-plans, /requesting-code-review, etc.) will load automatically on your next session."
+ui_info "Full skill catalog:"
+ui_link "https://github.com/Moonsong-Labs/knowledge-work-plugins"
+echo ""
+if [[ -n "$PT_TOKEN" ]]; then ui_info "Use 'cld' instead of 'claude' to route through Prompt-Train (restart your shell first)."; fi
+ui_info "Open a new session in any of your configured tools to get started."

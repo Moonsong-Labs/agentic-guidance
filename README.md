@@ -5,7 +5,7 @@ Base system prompt, onboarding kit, and benchmark framework for AI-assisted engi
 ## Quick start
 
 ```bash
-bash <(curl -sSL https://raw.githubusercontent.com/Moonsong-Labs/agentic-guidance/main/setup.sh)
+bash <(curl -sSL https://github.com/Moonsong-Labs/agentic-guidance/releases/latest/download/setup.sh)
 ```
 
 This configures your machine for AI-assisted engineering at MSL:
